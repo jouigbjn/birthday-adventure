@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Happy Birthday to Michelle</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100svh;
+      display: grid;
+      place-items: center;
+      background: #000;
+      color: #fff3f7;
+      font: 16px system-ui, sans-serif;
+    }
+    main { width: min(96vw, 760px); text-align: center; padding: 12px 0; }
+    .stage { position: relative; }
+    canvas { display: block; width: 100%; height: auto; }
+    #greeting:not([hidden]) {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+        }
+    button {
+      margin: 4px;
+      padding: 9px 15px;
+      border: 1px solid #000;
+      border-radius: 8px;
+      background: #eb5a85;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <div class="stage">
+    <canvas id="scene" role="img"
+      aria-label="A rotating ASCII strawberry cream cake with one candle, followed by fireworks">
+      A strawberry cream birthday cake followed by fireworks.
+    </canvas>
+    <h1 id="greeting" hidden>Happy Birthday to Michelle</h1>
+  </div>
+  <button id="pause" type="button">Pause</button>
+  <button id="replay" type="button">Replay</button>
+  <button id="skip" type="button">Show birthday message</button>
+</main>
+
+<script>
+"use strict";
+
+const canvas = document.querySelector("#scene");
+const ctx = canvas.getContext("2d");
+const greeting = document.querySelector("#greeting");
+const pause = document.querySelector("#pause");
+const replay = document.querySelector("#replay");
+const skip = document.querySelector("#skip");
+
+const TAU = Math.PI * 2;
+const COLS = 112, ROWS = 48;
+const CW = 6, CH = 11;
+const W = COLS * CW, H = ROWS * CH;
+const dpr = Math.min(devicePixelRatio || 1, 2);
+canvas.width = Math.round(W * dpr);
+canvas.height = Math.round(H * dpr);
+ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+ctx.font = "10px monospace";
+ctx.textBaseline = "top";
+
+const BG = "#000";
+const palette = [
+  "#a4a1bc", "#fff6ee", "#ffdfa1", "#ad244c",
+  "#f33958", "#ffd187", "#ffb4db", "#fff0a8",
+  "#ff983c", "#c3a9d1", "#dfae75"
+];
+const points = [];
+let seed = 24601;
+
+function random() {
+  seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+  return seed / 4294967296;
+}
+function point(x, y, z, color, glyph, at, flame = false) {
+  points.push({ x, y, z, color, glyph, at, flame });
+}
+function polar(r, a, y, dz, color, glyph, at) {
+  point(r * Math.sin(a), y, r * Math.cos(a) + dz, color, glyph, at);
+}
+
+ const BOTTOM = -0.90;
+const TIERS = [
+  { radius: 1.34, bottom: BOTTOM, top: -0.38, at: 0.45 },
+  { radius: 0.97, bottom: -0.38, top: 0.10, at: 1.35 },
+  { radius: 0.62, bottom: 0.10, top: 0.52, at: 2.22 }
+];
+
+// Closed discs and cylinders: no wedge, cut face, or loose slice.
+function disk(radius, y, color, at) {
+  const rings = Math.ceil(radius / 0.028);
+  for (let j = 0; j <= rings; j++) {
+    const r = radius * j / rings;
+    const n = Math.max(1, Math.ceil(TAU * r / 0.028));
+    for (let i = 0; i < n; i++) {
+      polar(r, TAU * i / n, y, 0, color, j === rings ? "=" : ".",
+        at + 0.12 * j / rings);
+    }
+  }
+}
+
+function cakeTier({ radius, bottom, top, at }) {
+  const n = Math.ceil(TAU * radius / 0.023);
+  const rows = Math.ceil((top - bottom) / 0.022);
+
+  for (let j = 0; j <= rows; j++) {
+    const f = j / rows;
+    const y = bottom + (top - bottom) * f;
+
+    for (let i = 0; i < n; i++) {
+      const a = TAU * i / n;
+      const bead = i % 10 < 5;
+      const trim = j <= 2;
+      const ribbon = Math.abs(f - 0.34) < 0.055;
+      const color = trim && bead ? 6 : ribbon ? 9 : 1;
+      const glyph = trim ? (bead ? "o" : ".") :
+                    ribbon ? "~" : j % 4 === 0 ? "+" : ":";
+      polar(radius, a, y, 0, color, glyph, at + 0.58 * f);
+    }
+  }
+
+  disk(radius, top, 1, at + 0.60);
+}
+
+function strawberry(x, z, base, size, at) {
+  for (let j = 0; j <= 19; j++) {
+    const t = j / 19;
+    const r = size * 0.20 * Math.sin(Math.PI * t) ** 0.6 *
+      (1.31 - 0.62 * t);
+    for (let i = 0; i < 38; i++) {
+      const a = TAU * i / 38 + j * 0.14;
+      const sugar = random() < (t > 0.70 ? 0.43 : 0.035);
+      const berrySeed = i % 8 === 0 && j % 4 === 0;
+      point(x + r * Math.cos(a), base + size * 0.35 * t,
+        z + r * Math.sin(a),
+        sugar ? 1 : berrySeed ? 5 : t < 0.30 ? 3 : 4,
+        sugar ? "+" : berrySeed ? "." : "#", at + t * 0.20);
+    }
+  }
+}
+
+function creamDollop(x, z, base, size, at) {
+  for (let j = 0; j <= 15; j++) {
+    const t = j / 15;
+    for (let i = 0; i < 32; i++) {
+      const a = TAU * i / 32;
+      const r = size * 0.15 * (1 - t) ** 0.75 *
+        (1 + 0.16 * Math.cos(6 * a - 5 * t));
+      point(x + r * Math.cos(a), base + size * 0.24 * t,
+        z + r * Math.sin(a), i % 6 === 0 ? 9 : 1,
+        i % 6 === 0 ? ":" : "@", at + t * 0.18);
+    }
+  }
+}
+
+disk(1.56, BOTTOM - 0.045, 0, 0);
+TIERS.forEach(cakeTier);
+
+// Alternate strawberries and cream around the exposed rims.
+TIERS.forEach(({ radius, top }, tier) => {
+  const count = [14, 10, 8][tier];
+  const size = [0.92, 0.85, 1.0][tier];
+
+  for (let i = 0; i < count; i++) {
+    const a = TAU * i / count + tier * 0.17;
+    const r = radius - 0.10;
+    const decorate = i % 2 === 0 ? strawberry : creamDollop;
+    decorate(r * Math.cos(a), r * Math.sin(a), top, size,
+      3.04 + tier * 0.23 + i * 0.034);
+  }
+});
+
+// These coordinates are shared by the candle and the firework launcher.
+const CANDLE_X = 0, CANDLE_Z = 0;
+const CANDLE_BASE = TIERS[2].top;
+const CANDLE_TOP = CANDLE_BASE + 0.41;
+const FLAME_Y = CANDLE_TOP + 0.105;
+
+for (let j = 0; j <= 22; j++) {
+  const y = CANDLE_BASE + (CANDLE_TOP - CANDLE_BASE) * j / 22;
+  for (let i = 0; i < 24; i++) {
+    const a = TAU * i / 24;
+    const stripe = Math.floor(i / 4 + j / 3) % 2;
+    point(CANDLE_X + 0.051 * Math.cos(a), y,
+      CANDLE_Z + 0.051 * Math.sin(a), stripe ? 6 : 1, "|",
+      3.90 + j * 0.020);
+  }
+}
+
+point(CANDLE_X, CANDLE_TOP + 0.027, CANDLE_Z, 9, "'", 4.36);
+
+for (let j = 0; j < 12; j++) {
+  for (let i = 0; i < 12; i++) {
+    const a = TAU * i / 12;
+    const r = 0.057 * Math.sin(Math.PI * (j + 1) / 13);
+    point(CANDLE_X + r * Math.cos(a), FLAME_Y + (j - 5) * 0.016,
+      CANDLE_Z + r * Math.sin(a), j < 6 ? 7 : 8,
+      j < 7 ? "*" : "+", 4.45, true);
+  }
+}
+
+// Timeline in seconds.
+const FADE_START = 7.5;
+const FADE_END = 9.1;
+const BURST = FADE_END;
+const MESSAGE = BURST + 0.24;
+const SPARK_LIFE = 6.0;
+const END = BURST + SPARK_LIFE + 0.2;
+
+const depth = new Float32Array(COLS * ROWS);
+const visible = new Int32Array(COLS * ROWS);
+const tilt = 0.36;
+const ct = Math.cos(tilt), st = Math.sin(tilt);
+
+function drawCake(t) {
+  const angle = -0.58 + t * 0.47;
+  const c = Math.cos(angle), s = Math.sin(angle);
+  depth.fill(-Infinity);
+  visible.fill(-1);
+
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    if (t < p.at || (p.flame && t >= FADE_START)) continue;
+    const sway = p.flame ? Math.sin(t * 14 + p.y * 8) * 0.027 : 0;
+    const px = p.x + sway;
+    const x = px * c - p.z * s;
+    const z = px * s + p.z * c;
+    const y = p.y * ct - z * st;
+    const near = p.y * st + z * ct;
+    const scale = 123 / (1 - near / 7);
+    const col = Math.floor((W * 0.5 + x * scale) / CW);
+    const row = Math.floor((H * 0.47 - y * scale) / CH);
+    if (col < 0 || col >= COLS || row < 0 || row >= ROWS) continue;
+    const cell = row * COLS + col;
+    if (near > depth[cell]) {
+      depth[cell] = near;
+      visible[cell] = i;
+    }
+  }
+
+  const fade = Math.min(1, Math.max(0, (t - FADE_START) / (FADE_END - FADE_START)));
+  ctx.globalAlpha = 1 - fade * fade * (3 - 2 * fade);
+  for (let i = 0; i < visible.length; i++) {
+    if (visible[i] < 0) continue;
+    const p = points[visible[i]];
+    ctx.fillStyle = palette[p.color];
+    ctx.fillText(p.glyph, i % COLS * CW, Math.floor(i / COLS) * CH);
+  }
+  ctx.globalAlpha = 1;
+}
+
+const FIRE_COLORS = ["#ff1744", "#ff3366", "#ff4f8b", "#ff79ae", "#ffd0e2"];
+
+// Match drawCake()'s projection and character grid at launch time.
+function projectToCell(x, y, z, t) {
+  const angle = -0.58 + t * 0.47;
+  const c = Math.cos(angle), s = Math.sin(angle);
+  const rx = x * c - z * s;
+  const rz = x * s + z * c;
+  const ry = y * ct - rz * st;
+  const near = y * st + rz * ct;
+  const scale = 123 / (1 - near / 7);
+  return {
+    x: Math.floor((W * 0.5 + rx * scale) / CW) * CW,
+    y: Math.floor((H * 0.47 - ry * scale) / CH) * CH
+  };
+}
+
+const launch = projectToCell(
+  CANDLE_X + Math.sin(FADE_START * 14 + FLAME_Y * 8) * 0.027,
+  FLAME_Y, CANDLE_Z, FADE_START
+);
+const burst = { x: W * 0.50, y: launch.y - 92 };
+
+const sparks = Array.from({ length: 210 }, (_, i) => {
+  const a = TAU * i / 210 + random() * 0.14;
+  const v = 33 + 154 * random();
+  return {
+    vx: Math.cos(a) * v,
+    vy: Math.sin(a) * v,
+    life: SPARK_LIFE * (0.62 + 0.38 * random()),
+    phase: TAU * random(),
+    color: FIRE_COLORS[i % FIRE_COLORS.length],
+    glyph: "*+x."[i % 4]
+  };
+});
+
+function glyphAt(glyph, x, y) {
+  ctx.fillText(glyph, Math.round(x / CW) * CW, Math.round(y / CH) * CH);
+}
+
+const HEART_COUNT = 50;
+const HEART_SIZES = [500, 300, 150];
+
+
+function makePlushHeart(light, middle, shadow, seed) {
+  const sprite = document.createElement("canvas");
+  sprite.width = sprite.height = 520;
+  const g = sprite.getContext("2d");
+
+  function noise() {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  }
+
+  const shape = new Path2D();
+  shape.moveTo(260, 448);
+  shape.bezierCurveTo(211, 425, 28, 310, 28, 164);
+  shape.bezierCurveTo(28, 45, 169, 27, 260, 124);
+  shape.bezierCurveTo(351, 27, 492, 45, 492, 164);
+  shape.bezierCurveTo(492, 310, 309, 425, 260, 448);
+  shape.closePath();
+
+  const shade = g.createRadialGradient(183, 112, 10, 260, 220, 310);
+  shade.addColorStop(0, light);
+  shade.addColorStop(0.52, middle);
+  shade.addColorStop(1, shadow);
+
+  g.shadowColor = middle;
+  g.shadowBlur = 9;
+  g.fillStyle = shade;
+  g.fill(shape);
+  g.shadowBlur = 0;
+
+  // Draw the fibers once. The animation reuses this finished texture.
+  g.lineCap = "round";
+  for (let i = 0; i < 23000; i++) {
+    const x = 24 + noise() * 472;
+    const y = 45 + noise() * 410;
+    if (!g.isPointInPath(shape, x, y)) continue;
+
+    const length = 2 + noise() * 9;
+    const lean = (x - 260) / 140 + (noise() - 0.5) * 1.4;
+    g.strokeStyle = noise() < 0.74 ? "#ffffff" : shadow;
+    g.globalAlpha = 0.10 + noise() * 0.27;
+    g.lineWidth = 0.5 + noise() * 1.1;
+
+    g.beginPath();
+    g.moveTo(x, y);
+    g.quadraticCurveTo(
+      x + lean * length * 0.28, y - length * 0.60,
+      x + lean * length * 0.55, y - length
+    );
+    g.stroke();
+  }
+
+  return sprite;
+}
+
+const plushSprites = [
+  makePlushHeart("#ffe4ee", "#efa0bb", "#b45178", 8091),
+  makePlushHeart("#ffffff", "#f2ebee", "#b9a8b3", 8264)
+];
+
+const plushHearts = Array.from({ length: HEART_COUNT }, (_, i) => {
+  // Shuffle the sizes across 10 waves of 5 hearts.
+  const slot = (i * 17) % HEART_COUNT;
+  const layer = slot < 6 ? 0 : slot < 20 ? 1 : 2;
+  const position = slot - [0, 6, 20][layer];
+  const count = [6, 14, 30][layer];
+
+  // Large hearts form the back layer; medium and small hearts fill the gaps.
+const columns = [3, 7, 10][layer];
+const row = Math.floor(position / columns);
+const col = position % columns;
+const jitter = (random() - 0.5) * 0.36;
+
+const landX = W * (col + 0.5 + jitter) / columns;
+
+// These are bottom anchor points, not the centers of the hearts.
+const rowAnchors = [
+  [0.66, 1.01],        // 500 px: 2 rows of 3
+  [0.44, 0.96],        // 300 px: 2 rows of 7
+  [0.23, 0.55, 0.89]   // 150 px: 3 rows of 10
+];
+
+const landY = H * rowAnchors[layer][row] + (random() - 0.5) * 24;
+const delay = 0.14 + Math.floor(i / 5) * 0.36 + random() * 0.10;
+let index = (i * 37 + 12) % sparks.length;
+  // Find a spark that is still visible when this heart peels off.
+  for (let attempt = 0; attempt < sparks.length; attempt++) {
+    if (sparks[index].life > delay) break;
+    index = (index + 1) % sparks.length;
+  }
+
+  const parent = sparks[index];
+  const drift = delay / (1 + 0.60 * delay);
+
+  return {
+    layer,
+    size: HEART_SIZES[layer],
+    sprite: plushSprites[(position + layer) % 2],
+    born: BURST + delay,
+    startX: burst.x + parent.vx * drift,
+    startY: burst.y + parent.vy * drift + 5.3 * delay * delay,
+    landX,
+    landY,
+    fall: 0.76 + random() * 0.23,
+    hop: [48, 37, 27][layer],
+    sway: (random() - 0.5) * 100,
+    tilt: (random() - 0.5) * 0.34
+  };
+});
+
+const plushPile = [...plushHearts].sort(
+  (a, b) => a.layer - b.layer || a.landY - b.landY
+);
+
+const FIRST_HOP = 0.38;
+const SECOND_HOP = 0.25;
+const SETTLE = 0.14;
+const HOP_TIME = FIRST_HOP + SECOND_HOP;
+
+function paintPlushHeart(h, x, y, sx, sy, angle, alpha = 1) {
+  const scale = h.size / 464;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(sx, sy);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(
+    h.sprite,
+    -260 * scale, -448 * scale,
+    520 * scale, 520 * scale
+  );
+  ctx.restore();
+}
+
+function drawHearts(t) {
+  // Draw the pile first, with the largest hearts behind the others.
+  for (const h of plushPile) {
+    const afterHops = t - h.born - h.fall - HOP_TIME;
+    if (afterHops < 0) continue;
+
+    const settled = Math.min(1, afterHops / SETTLE);
+    const squash = 0.12 * (1 - settled);
+
+    paintPlushHeart(
+        h, h.landX, h.landY,
+        1 + squash, 1 - squash, h.tilt
+    );
+    }
+
+  // Falling and bouncing hearts stay in front of the pile.
+  for (const h of plushHearts) {
+    const age = t - h.born;
+    if (age < 0 || age >= h.fall + HOP_TIME) continue;
+
+    if (age < h.fall) {
+      const u = age / h.fall;
+      const grow = 0.05 + 0.95 * (1 - (1 - u) ** 2);
+      const stretch = 0.16 * Math.sin(Math.PI * u);
+
+      paintPlushHeart(
+        h,
+        h.startX + (h.landX - h.startX) * u
+          + Math.sin(Math.PI * u) * h.sway,
+        h.startY + (h.landY - h.startY) * u ** 2,
+        grow * (1 - stretch * 0.5),
+        grow * (1 + stretch),
+        h.tilt * u,
+        Math.min(1, u * 12)
+      );
+      continue;
+    }
+
+    const a = age - h.fall;
+    const second = a >= FIRST_HOP;
+    const u = second ? (a - FIRST_HOP) / SECOND_HOP : a / FIRST_HOP;
+    const hop = h.hop * (second ? 0.35 : 1) * 4 * u * (1 - u);
+    const squash = (second ? 0.15 : 0.26) * Math.max(0, 1 - u * 5);
+    const wobble = 0.05 * Math.sin(u * Math.PI * 4) * (1 - u);
+
+    paintPlushHeart(
+      h, h.landX, h.landY - hop,
+      1 + squash + wobble, 1 - squash - wobble, h.tilt + wobble
+    );
+  }
+}
+
+function rocketAt(u) {
+  return {
+    x: launch.x + (burst.x - launch.x) * u + Math.sin(Math.PI * u) * 17,
+    y: launch.y + (burst.y - launch.y) * u ** 0.9
+  };
+}
+
+function drawFirework(t) {
+  if (t < FADE_START) return;
+
+  if (t < BURST) {
+    const u = (t - FADE_START) / (BURST - FADE_START);
+
+    for (let i = 7; i >= 0; i--) {
+      const trail = u - i * 0.038;
+      if (trail < 0) continue;
+      const p = rocketAt(trail);
+      ctx.globalAlpha = 1 - i * 0.115;
+      ctx.fillStyle = i === 0 ? FIRE_COLORS[4] : FIRE_COLORS[i % 4];
+      glyphAt(i === 0 ? "*" : i < 3 ? "+" : ".", p.x, p.y);
+    }
+  } else {
+    const age = t - BURST;
+
+    for (const p of sparks) {
+      if (age >= p.life) continue;
+
+      for (let trail = 3; trail >= 0; trail--) {
+        const a = age - trail * 0.095;
+        if (a < 0) continue;
+
+        const drift = a / (1 + 0.60 * a);
+        const twinkle = 0.74 + 0.26 * Math.cos(age * 17 + p.phase);
+        ctx.globalAlpha = (1 - age / p.life) ** 0.65 *
+          twinkle * (1 - trail * 0.23);
+        ctx.fillStyle = p.color;
+        glyphAt(trail ? "." : p.glyph,
+          burst.x + p.vx * drift,
+          burst.y + p.vy * drift + 5.3 * a * a);
+      }
+    }
+  }
+
+  ctx.globalAlpha = 1;
+}
+
+function drawGreeting(t) {
+  if (t < MESSAGE) return;
+
+  const alpha = Math.min(1, (t - MESSAGE) / 0.65);
+  const y = H * 0.42;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  
+  ctx.fillStyle = "#ffedf5";
+  
+  ctx.shadowColor = "#ff286f";
+  ctx.shadowBlur = 12;
+  ctx.font = 'bold 31px "Courier New", monospace';
+  ctx.fillText("H A P P Y   B I R T H D A Y", W / 2, y, W - 40);
+
+  ctx.shadowBlur = 5;
+  ctx.fillStyle = "#870434";
+  ctx.font = 'italic 27px "Courier New", monospace';
+  ctx.fillText("to Michelle", W / 2, y + 39);
+
+  ctx.restore();
+}
+
+function draw(t) {
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+
+  // Separate draws let the rocket fly while the cake is fading.
+  if (t < FADE_END) drawCake(t);
+    drawFirework(t);
+    drawHearts(t);
+    drawGreeting(t);
+
+  // Keep a real heading available to screen readers after the reveal.
+  greeting.hidden = t < MESSAGE;
+}
+
+let time = 0, last = null, frame = 0, running = false;
+function stop() {
+  running = false;
+  cancelAnimationFrame(frame);
+  last = null;
+}
+function tick(now) {
+  if (!running) return;
+  if (last !== null) time = Math.min(END, time + Math.min(0.05, (now - last) / 1000));
+  last = now;
+  draw(time);
+  if (time < END) frame = requestAnimationFrame(tick);
+  else {
+    stop();
+    pause.textContent = "Play";
+  }
+}
+function play(restart = false) {
+  stop();
+  if (restart || time >= END) time = 0;
+  draw(time);
+  running = true;
+  pause.textContent = "Pause";
+  frame = requestAnimationFrame(tick);
+}
+
+pause.onclick = () => {
+  if (running) {
+    stop();
+    pause.textContent = "Resume";
+  } else play();
+};
+replay.onclick = () => play(true);
+skip.onclick = () => {
+  stop();
+  time = END;
+  draw(time);
+  pause.textContent = "Play";
+};
+
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  skip.onclick();
+} else {
+  play();
+}
+</script>
+</body>
+</html>

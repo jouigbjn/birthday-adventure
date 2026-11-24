@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Michelle's Birthday Adventure</title>
+  <style>
+    #art:empty { display: none; }
+    * { box-sizing: border-box; }
+
+    :root {
+      color-scheme: dark;
+      --pink: #ff91bb;
+      --white: #fff0f6;
+      --muted: #e1a9c0;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100svh;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: #000;
+      color: var(--white);
+      font: 16px/1.5 "Courier New", monospace;
+    }
+
+    main { width: min(100%, 640px); }
+
+    .frame {
+      border: 1px dashed #a55078;
+      background: #130910;
+      padding: clamp(16px, 5vw, 36px);
+      text-align: center;
+      box-shadow: 0 0 35px #ff398018;
+    }
+
+    .label, footer {
+      color: var(--muted);
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+    }
+
+    pre {
+      margin: 16px auto;
+      color: var(--pink);
+      font: inherit;
+      line-height: 1.15;
+    }
+
+    h1 {
+      margin: 12px 0;
+      font-size: clamp(1.35rem, 5vw, 2.25rem);
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    h1:focus { outline: none; }
+
+    #description { color: var(--muted); }
+
+    #choices {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    button {
+      max-width: 100%;
+      min-height: 44px;
+      padding: 9px 14px;
+      border: 1px solid var(--pink);
+      border-radius: 4px;
+      background: #2c1021;
+      color: var(--white);
+      font: inherit;
+      overflow-wrap: anywhere;
+      cursor: pointer;
+    }
+
+    button.primary { background: var(--pink); color: #210913; }
+    button:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
+
+    .runaway.escaped {
+      position: fixed;
+      z-index: 5;
+      margin: 0;
+      max-width: calc(100vw - 24px);
+    }
+
+    #message {
+      min-height: 3em;
+      margin: 18px 0 0;
+      color: var(--pink);
+    }
+
+    footer { margin-top: 12px; text-align: center; }
+  </style>
+</head>
+
+<body>
+  <main>
+    <section class="frame" aria-labelledby="title">
+      <div class="label" id="progress">[ BIRTHDAY QUEST ]</div>
+      <pre id="art" aria-hidden="true"></pre>
+      <h1 id="title" tabindex="-1"></h1>
+      <p id="description"></p>
+      <div id="choices"></div>
+      <p id="message" role="status" aria-live="polite" aria-atomic="true"></p>
+    </section>
+    <footer>MADE BY MATTHEW &lt;3</footer>
+  </main>
+
+  <script>
+    "use strict";
+
+    const CAKE_PAGE = "./hbd.html";
+    const title = document.querySelector("#title");
+    const progress = document.querySelector("#progress");
+    const art = document.querySelector("#art");
+    const description = document.querySelector("#description");
+    const choices = document.querySelector("#choices");
+    const message = document.querySelector("#message");
+
+    const HEART = String.raw`  **   **
+ **** ****
+ *********
+  *******
+   *****
+    ***
+     *`;
+
+    const GIFT = String.raw`    _  _
+   (_\/_)
+ .---||---.
+ |===++===|
+ |   ||   |
+ '--------'`;
+
+    let timers = [];
+    let leaving = false;
+
+    function clearTimers() {
+      timers.forEach(clearTimeout);
+      timers = [];
+    }
+
+    function later(ms, fn) {
+      timers.push(setTimeout(fn, ms));
+    }
+
+    function goToCake() {
+      if (leaving) return;
+      leaving = true;
+      clearTimers();
+      window.location.href = CAKE_PAGE;
+    }
+
+    function showScreen(label, heading, picture, subtitle = "", focus = true) {
+      clearTimers();
+      progress.textContent = label;
+      title.textContent = heading;
+      art.textContent = picture;
+      description.textContent = subtitle;
+      description.hidden = !subtitle;
+      message.textContent = "";
+      choices.replaceChildren();
+      if (focus) title.focus({ preventScroll: true });
+    }
+
+    function addButton(label, action) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "primary";
+      button.textContent = label;
+      button.addEventListener("click", action);
+      choices.append(button);
+      return button;
+    }
+
+    function addRunaway(label, safeButton) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "runaway";
+      button.textContent = label;
+      choices.append(button);
+
+      function dodge(event) {
+        const pad = 12;
+        const old = button.getBoundingClientRect();
+        const safe = safeButton.getBoundingClientRect();
+        const heading = title.getBoundingClientRect();
+        const width = document.documentElement.clientWidth;
+        const height = document.documentElement.clientHeight;
+        const maxX = Math.max(pad, width - old.width - pad);
+        const maxY = Math.max(pad, height - old.height - pad);
+        const hasPointer = event.type !== "click" || event.detail > 0;
+        const fromX = hasPointer ? event.clientX : old.left + old.width / 2;
+        const fromY = hasPointer ? event.clientY : old.top + old.height / 2;
+
+        function overlaps(x, y, box, gap = 10) {
+          return x < box.right + gap && x + old.width > box.left - gap &&
+                 y < box.bottom + gap && y + old.height > box.top - gap;
+        }
+
+        // Pick a spot far from the pointer without covering the right answer.
+        let best = null;
+        for (const x of [pad, (pad + maxX) / 2, maxX]) {
+          for (const y of [pad, (pad + maxY) / 2, maxY]) {
+            if (overlaps(x, y, safe) || overlaps(x, y, heading)) continue;
+            const distance = Math.hypot(
+              x + old.width / 2 - fromX,
+              y + old.height / 2 - fromY
+            );
+            if (!best || distance > best.distance) best = { x, y, distance };
+          }
+        }
+
+        // On a very cramped screen, don't let the joke block the right answer.
+        if (!best) {
+          message.textContent = "[ Nice try. Pick the other answer! ]";
+          return;
+        }
+
+        button.classList.add("escaped");
+        button.style.left = `${best.x}px`;
+        button.style.top = `${best.y}px`;
+      }
+
+      button.addEventListener("pointerenter", (event) => {
+        if (event.pointerType === "mouse") dodge(event);
+      });
+
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        dodge(event);
+      });
+
+      // Keyboard activation also dodges; the wrong answer never advances.
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        dodge(event);
+      });
+
+      window.addEventListener("resize", () => {
+        button.classList.remove("escaped");
+        button.style.left = "";
+        button.style.top = "";
+      });
+    }
+
+    function questionOne() {
+      showScreen("[ CHECKPOINT 1 / 3 ]", "Who is going for the adventure?", "");
+      const correct = addButton("MgMgg Michelle (Matthew's beloved)", questionTwo);
+      addRunaway("Random Michelle", correct);
+    }
+
+    function questionTwo() {
+      showScreen(
+        "[ CHECKPOINT 2 / 3 ]",
+        "Do you want a birthday present from Matthew?",
+        GIFT
+      );
+      const correct = addButton("Yes", questionThree);
+      addRunaway("No", correct);
+    }
+
+    function questionThree() {
+      showScreen("[ CHECKPOINT 3 / 3 ]", "Are you ready for the present?", GIFT);
+      addButton("Let's go", goToCake);
+
+      later(5000, () => {
+        message.textContent = "What are you waiting for?!!!!";
+      });
+
+      later(10000, () => {
+        message.textContent = "Still not going for it???, Why?";
+      });
+
+      later(15000, () => {
+        message.textContent = "Never mind, let's have the birthday cake";
+        later(1600, goToCake);
+      });
+    }
+
+    showScreen(
+        "[ BIRTHDAY QUEST ]",
+        "Welcome to your Birthday Adventure",
+        "",
+        "",
+        false
+    );
+    addButton("Start", questionOne);
+  </script>
+</body>
+</html>
